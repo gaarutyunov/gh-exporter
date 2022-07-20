@@ -58,7 +58,7 @@ func Export(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	pool := workpool.New(5)
+	pool := workpool.New(10)
 	perPage := 100
 	totalPages := res.GetTotal() / perPage
 
@@ -83,10 +83,10 @@ func Export(cmd *cobra.Command, args []string) error {
 				return err
 			}
 
-			pool := workpool.New(5)
+			pool := workpool.New(10)
 
 			for _, rr := range res.Repositories {
-				repository := gh.NewRepo(rr.GetSSHURL(), rr.GetFullName(), outDir)
+				repository := gh.NewRepo(rr.GetSSHURL(), rr.GetFullName(), outDir, rr.GetSize())
 
 				if ok, err := repository.Exists(); err != nil {
 					return err
