@@ -13,7 +13,11 @@ install: ## Install dependencies
 
 .PHONY: build
 build: ## Build the project
-	go build -o $(BUILD)/$(PROJECT_NAME) $(CURDIR)/cmd/main.go
+	go build -o $(BUILD)/$(PROJECT_NAME) $(CURDIR)/cmd/$(PROJECT_NAME)/main.go
+
+.PHONY: cp
+cp: ## Copy project to bin
+	 cp $(BUILD)/$(PROJECT_NAME) /usr/local/bin
 
 .PHONY: clean
 clean: ## Clean project

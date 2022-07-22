@@ -2,7 +2,6 @@ package gh
 
 import (
 	"context"
-	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
@@ -10,7 +9,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/shirou/gopsutil/v3/mem"
 	"io"
 	"os"
 	"path"
@@ -22,38 +20,35 @@ type Repo struct {
 	fullName string
 	repoDir  string
 	size     uint64
-	mem      billy.Filesystem
-	os       billy.Filesystem
 }
 
-func NewRepo(sshURL string, fullName string, cloneDir string, size int) *Repo {
-	repoDir := path.Join(cloneDir, fullName)
+func (r *Repo) SshURL() string {
+	return r.sshURL
+}
+
+func (r *Repo) FullName() string {
+	return r.fullName
+}
+
+func (r *Repo) Size() uint64 {
+	return r.size
+}
+
+func NewRepo(sshURL string, fullName string, rootDir string, size uint64) *Repo {
+	cloneDir := path.Join(rootDir, fullName)
 
 	return &Repo{
 		sshURL:   sshURL,
 		fullName: fullName,
-		repoDir:  repoDir,
-		size:     uint64(size) * uint64(cache.KiByte),
-		mem:      memfs.New(),
-		os:       osfs.New(repoDir),
+		repoDir:  cloneDir,
+		size:     size * uint64(cache.KiByte),
 	}
-}
-
-func (r *Repo) Clone(ctx context.Context, sshKey *ssh.PublicKeys, pattern string) error {
-	v, err := mem.VirtualMemory()
-	if err != nil {
-		return err
-	}
-
-	if v.Available < r.size+1*uint64(cache.GiByte) {
-		return r.CloneFS(ctx, sshKey, pattern)
-	}
-
-	return r.CloneMem(ctx, sshKey, pattern)
 }
 
 func (r *Repo) CloneFS(ctx context.Context, sshKey *ssh.PublicKeys, pattern string) error {
-	_, err := git.CloneContext(ctx, filesystem.NewStorage(r.os, cache.NewObjectLRU(128*cache.MiByte)), r.os, &git.CloneOptions{
+	fs := osfs.New(r.repoDir)
+
+	_, err := git.CloneContext(ctx, filesystem.NewStorage(fs, cache.NewObjectLRU(128*cache.MiByte)), fs, &git.CloneOptions{
 		Auth: sshKey,
 		URL:  r.sshURL,
 	})
@@ -61,13 +56,14 @@ func (r *Repo) CloneFS(ctx context.Context, sshKey *ssh.PublicKeys, pattern stri
 		return err
 	}
 
-	var read func(dir string) error
+	var read func(dir string) (count int, err error)
 
-	read = func(dir string) error {
-		files, err := r.os.ReadDir(dir)
+	read = func(dir string) (count int, err error) {
+		files, err := fs.ReadDir(dir)
 		if err != nil {
-			return err
+			return 0, err
 		}
+		count = len(files)
 
 		for _, file := range files {
 			fullName := file.Name()
@@ -77,31 +73,45 @@ func (r *Repo) CloneFS(ctx context.Context, sshKey *ssh.PublicKeys, pattern stri
 			}
 
 			if file.IsDir() {
-				if err = read(fullName); err != nil {
-					return err
+				if n, err := read(fullName); err != nil {
+					return 0, err
+				} else if n == 0 {
+					if err := fs.Remove(fullName); err != nil {
+						return 0, err
+					}
+					count -= 1
 				}
 				continue
 			}
 
 			match, err := filepath.Match(pattern, file.Name())
 			if err != nil {
-				return err
+				return 0, err
 			}
 			if !match {
-				if err := r.os.Remove(fullName); err != nil {
-					return err
+				if err := fs.Remove(fullName); err != nil {
+					return 0, err
 				}
+				count -= 1
 			}
 		}
 
-		return nil
+		return count, err
 	}
 
-	return read("/")
+	_, err = read("/")
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern string) error {
-	_, err := git.CloneContext(ctx, memory.NewStorage(), r.mem, &git.CloneOptions{
+	fs := memfs.New()
+	fsDisk := osfs.New(r.repoDir)
+
+	_, err := git.CloneContext(ctx, memory.NewStorage(), fs, &git.CloneOptions{
 		Auth: sshKey,
 		URL:  r.sshURL,
 	})
@@ -112,7 +122,7 @@ func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern str
 	var read func(dir string) error
 
 	read = func(dir string) error {
-		files, err := r.mem.ReadDir(dir)
+		files, err := fs.ReadDir(dir)
 		if err != nil {
 			return err
 		}
@@ -122,6 +132,10 @@ func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern str
 
 			if dir != "/" {
 				fullName = path.Join(dir, file.Name())
+			}
+
+			if file.Mode()&os.ModeSymlink != 0 {
+				continue
 			}
 
 			if file.IsDir() {
@@ -138,12 +152,12 @@ func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern str
 				continue
 			}
 
-			src, err := r.mem.Open(fullName)
+			src, err := fs.Open(fullName)
 			if err != nil {
 				return err
 			}
 
-			dst, err := r.os.Create(fullName)
+			dst, err := fsDisk.Create(fullName)
 			if err != nil {
 				return err
 			}
