@@ -40,7 +40,7 @@ var (
 func init() {
 	// search
 	pFlags := searchCmd.PersistentFlags()
-	pFlags.StringP("query", "q", "q=language:python", "GItHub repos search query")
+	pFlags.StringP("query", "q", "q=language:python", "GitHub repos search query")
 	pFlags.StringP("out", "o", "~/git-py/results.csv", "Search results file")
 
 	// plan
