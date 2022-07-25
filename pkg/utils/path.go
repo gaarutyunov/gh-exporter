@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"os"
 	"os/user"
 	"path"
 	"strings"
@@ -23,4 +24,24 @@ func ExpandPath(p string) string {
 	}
 
 	return p
+}
+
+func TryCreate(p string) (fi *os.File, err error) {
+	if fi, err = os.OpenFile(p, os.O_RDWR, os.ModePerm); err != nil && !os.IsNotExist(err) {
+		return nil, err
+	} else if err == nil {
+		return
+	}
+
+	d := path.Dir(p)
+
+	if err := os.MkdirAll(d, os.ModePerm); err != nil && !os.IsExist(err) {
+		return nil, err
+	}
+
+	if fi, err = os.Create(p); err != nil && !os.IsExist(err) {
+		return nil, err
+	}
+
+	return
 }

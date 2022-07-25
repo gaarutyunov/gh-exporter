@@ -11,7 +11,6 @@ require (
 	github.com/spf13/cobra v1.5.0
 	github.com/xxjwxc/gowp v0.0.0-20220528192505-f87b7668d4ff
 	golang.org/x/oauth2 v0.0.0-20220718184931-c8730f7fcb92
-	golang.org/x/sync v0.0.0-20220513210516-0976fa681c29
 	golang.org/x/time v0.0.0-20220411224347-583f2d630306
 )
 

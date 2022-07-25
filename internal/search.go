@@ -7,10 +7,11 @@ import (
 	"github.com/gaarutyunov/gh-exporter/pkg/utils"
 	"github.com/google/go-github/v45/github"
 	"github.com/spf13/cobra"
-	"github.com/xxjwxc/gowp/workpool"
 	"os"
-	"sync"
+	"time"
 )
+
+const layout = "2006-01-02"
 
 func Search(cmd *cobra.Command, args []string) error {
 	client := gh.NewClient(cmd.Context())
@@ -38,7 +39,7 @@ func Search(cmd *cobra.Command, args []string) error {
 	out = utils.ExpandPath(out)
 	var fi *os.File
 
-	if fi, err = os.Create(out); err != nil && !os.IsExist(err) {
+	if fi, err = utils.TryCreate(out); err != nil {
 		return err
 	}
 
@@ -46,35 +47,38 @@ func Search(cmd *cobra.Command, args []string) error {
 		_ = fi.Close()
 	}(fi)
 
-	pool := workpool.New(10)
 	perPage := 100
-	totalPages := res.GetTotal() / perPage
+	total := res.GetTotal()
 
 	bar := pb.StartNew(res.GetTotal())
-	var mx sync.Mutex
 
-	for i := 0; i <= totalPages; i++ {
-		ii := i
+	now := time.Now()
+	from := now.Add(-(time.Hour * 24 * 30))
+	lastRange := fmt.Sprintf("%s..%s", from.Format(layout), now.Format(layout))
 
-		pool.Do(func() error {
-			defer bar.Increment()
+	for !bar.IsFinished() {
+		if err := client.Wait(cmd.Context()); err != nil {
+			return err
+		}
 
-			if err := client.Wait(cmd.Context()); err != nil {
-				return err
-			}
+		page := 0
+		pageSize := perPage
 
-			res, _, err := client.Search.Repositories(cmd.Context(), query, &github.SearchOptions{
+		for pageSize >= perPage {
+			res, _, err := client.Search.Repositories(cmd.Context(), query+" pushed:"+lastRange, &github.SearchOptions{
+				Sort:      "updated",
+				Order:     "desc",
 				TextMatch: false,
 				ListOptions: github.ListOptions{
-					Page:    ii,
+					Page:    page,
 					PerPage: perPage,
 				},
 			})
 			if err != nil {
 				return err
 			}
-			mx.Lock()
-			defer mx.Unlock()
+
+			pageSize = len(res.Repositories)
 
 			for _, repository := range res.Repositories {
 				if _, err = fmt.Fprintf(
@@ -86,17 +90,20 @@ func Search(cmd *cobra.Command, args []string) error {
 				); err != nil {
 					return err
 				}
+
+				bar.Increment()
 			}
+			page++
+		}
 
-			return nil
-		})
+		lastFrom := from.Add(-(time.Hour * 24 * 1))
+		from = lastFrom.Add(-(time.Hour * 24 * 30))
+		lastRange = fmt.Sprintf("%s..%s", from.Format(layout), lastFrom.Format(layout))
+
+		if bar.Current() >= int64(total) {
+			bar.Finish()
+		}
 	}
-
-	if err := pool.Wait(); err != nil {
-		return err
-	}
-
-	bar.Finish()
 
 	return nil
 }

@@ -35,13 +35,21 @@ func Plan(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 
-	fin, err := os.Open(in)
+	fin, err := utils.TryCreate(in)
 	if err != nil {
 		return err
 	}
 	defer func(fin *os.File) {
 		err = fin.Close()
 	}(fin)
+
+	fout, err := utils.TryCreate(out)
+	if err != nil {
+		return err
+	}
+	defer func(fout *os.File) {
+		err = fout.Close()
+	}(fout)
 
 	scanner := bufio.NewScanner(fin)
 
@@ -60,14 +68,6 @@ func Plan(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	bins, remainder := binpack.FirstFit(items, capacity)
-
-	fout, err := os.Create(out)
-	if err != nil {
-		return err
-	}
-	defer func(fout *os.File) {
-		err = fout.Close()
-	}(fout)
 
 	for _, bin := range bins {
 		for _, rr := range bin {
