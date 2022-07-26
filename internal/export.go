@@ -55,9 +55,6 @@ func Export(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err = os.MkdirAll(outDir, os.ModePerm); err != nil && !os.IsExist(err) {
-		return err
-	}
 
 	fsearch, err := os.Open(searchFile)
 	if err != nil {
