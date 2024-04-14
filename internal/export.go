@@ -2,19 +2,24 @@ package internal
 
 import (
 	"bufio"
+	"context"
 	"github.com/cheggaaa/pb/v3"
 	"github.com/gaarutyunov/gh-exporter/pkg/gh"
 	"github.com/gaarutyunov/gh-exporter/pkg/utils"
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
-	"github.com/xxjwxc/gowp/workpool"
+	"golang.org/x/sync/errgroup"
 	"os"
 	"strings"
 )
 
 func Export(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
+	return doExport(cmd.Context(), cmd, args, nil)
+}
+
+func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs billy.Filesystem) error {
 	concurrency, err := cmd.PersistentFlags().GetInt("concurrency")
 	if err != nil {
 		return err
@@ -35,7 +40,7 @@ func Export(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	outDir = utils.ExpandPath(outDir)
-	if err = os.MkdirAll(outDir, os.ModePerm); err != nil && !os.IsExist(err) {
+	if err = outFs.MkdirAll(outDir, os.ModeDir); err != nil && !os.IsExist(err) {
 		return err
 	}
 
@@ -85,7 +90,8 @@ func Export(cmd *cobra.Command, args []string) error {
 
 	for scanner.Scan() {
 		if scanner.Text() == "" {
-			pool := workpool.New(concurrency)
+			var wg errgroup.Group
+			wg.SetLimit(concurrency)
 
 			for _, rr := range group {
 				repository := rr
@@ -97,9 +103,9 @@ func Export(cmd *cobra.Command, args []string) error {
 					continue
 				}
 
-				pool.Do(func() error {
+				wg.Go(func() error {
 					defer bar.Increment()
-					if err := repository.CloneMem(ctx, publicKey, pattern); err != nil {
+					if err := repository.CloneMem(ctx, publicKey, pattern, outFs); err != nil {
 						return err
 					}
 
@@ -107,7 +113,7 @@ func Export(cmd *cobra.Command, args []string) error {
 				})
 			}
 
-			if err = pool.Wait(); err != nil {
+			if err = wg.Wait(); err != nil {
 				return err
 			}
 
@@ -119,6 +125,10 @@ func Export(cmd *cobra.Command, args []string) error {
 			fullName, sshUrl, size := vals[0], vals[1], vals[2]
 
 			repo := gh.NewRepo(sshUrl, fullName, outDir, cast.ToUint64(size))
+			if len(vals) > 3 {
+				sha := strings.TrimSpace(vals[3])
+				repo.SetSHA(sha)
+			}
 			if isRemainder {
 				remainder = append(remainder, repo)
 			} else {
@@ -131,7 +141,8 @@ func Export(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	pool := workpool.New(concurrency)
+	var wg errgroup.Group
+	wg.SetLimit(concurrency)
 
 	for _, rr := range remainder {
 		repository := rr
@@ -143,9 +154,9 @@ func Export(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		pool.Do(func() error {
+		wg.Go(func() error {
 			defer bar.Increment()
-			if err := repository.CloneFS(ctx, publicKey, pattern); err != nil {
+			if err := repository.CloneFS(ctx, publicKey, pattern, outFs); err != nil {
 				return err
 			}
 
@@ -153,7 +164,7 @@ func Export(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	if err = pool.Wait(); err != nil {
+	if err = wg.Wait(); err != nil {
 		return err
 	}
 

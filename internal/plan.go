@@ -60,6 +60,9 @@ func Plan(cmd *cobra.Command, args []string) (err error) {
 		fullName, sshUrl, size := vals[0], vals[1], vals[2]
 
 		repo := gh.NewRepo(sshUrl, fullName, "", cast.ToUint64(size))
+		if len(vals) > 3 {
+			repo.SetSHA(vals[3])
+		}
 		items = append(items, repo)
 	}
 
@@ -78,10 +81,11 @@ func Plan(cmd *cobra.Command, args []string) (err error) {
 
 			if _, err = fmt.Fprintf(
 				fout,
-				"%s;%s;%d\n",
+				"%s;%s;%d;%s\n",
 				repo.FullName(),
 				repo.SshURL(),
 				repo.Size(),
+				repo.SHA(),
 			); err != nil {
 				return err
 			}
@@ -105,10 +109,11 @@ func Plan(cmd *cobra.Command, args []string) (err error) {
 
 			if _, err = fmt.Fprintf(
 				fout,
-				"%s;%s;%d\n",
+				"%s;%s;%d;%s\n",
 				repo.FullName(),
 				repo.SshURL(),
 				repo.Size(),
+				repo.SHA(),
 			); err != nil {
 				return err
 			}

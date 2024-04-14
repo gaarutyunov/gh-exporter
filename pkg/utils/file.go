@@ -35,3 +35,16 @@ func LineCounter(r io.Reader) (int, error) {
 
 	return count, nil
 }
+
+func IterLines(r io.Reader, iter func(line string) error) error {
+	scanner := bufio.NewScanner(r)
+
+	for scanner.Scan() {
+		err := iter(scanner.Text())
+		if err != nil {
+			return err
+		}
+	}
+
+	return scanner.Err()
+}
