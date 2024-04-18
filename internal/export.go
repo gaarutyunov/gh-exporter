@@ -7,6 +7,7 @@ import (
 	"github.com/gaarutyunov/gh-exporter/pkg/gh"
 	"github.com/gaarutyunov/gh-exporter/pkg/utils"
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
@@ -16,7 +17,7 @@ import (
 )
 
 func Export(cmd *cobra.Command, args []string) error {
-	return doExport(cmd.Context(), cmd, args, nil)
+	return doExport(cmd.Context(), cmd, args, osfs.New(""))
 }
 
 func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs billy.Filesystem) error {

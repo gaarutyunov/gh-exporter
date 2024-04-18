@@ -5,7 +5,6 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/helper/chroot"
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
@@ -61,11 +60,7 @@ func (r *Repo) SetSHA(sha string) {
 }
 
 func (r *Repo) CloneFS(ctx context.Context, sshKey *ssh.PublicKeys, pattern string, outFs billy.Filesystem) error {
-	if outFs == nil {
-		outFs = osfs.New(r.repoDir)
-	} else {
-		outFs = chroot.New(outFs, r.repoDir)
-	}
+	outFs = chroot.New(outFs, r.repoDir)
 
 	rr, err := git.CloneContext(ctx, filesystem.NewStorage(outFs, cache.NewObjectLRU(128*cache.MiByte)), outFs, &git.CloneOptions{
 		Auth: sshKey,
@@ -142,11 +137,7 @@ func (r *Repo) CloneFS(ctx context.Context, sshKey *ssh.PublicKeys, pattern stri
 
 func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern string, outFs billy.Filesystem) error {
 	fs := memfs.New()
-	if outFs == nil {
-		outFs = osfs.New(r.repoDir)
-	} else {
-		outFs = chroot.New(outFs, r.repoDir)
-	}
+	outFs = chroot.New(outFs, r.repoDir)
 
 	rr, err := git.CloneContext(ctx, memory.NewStorage(), fs, &git.CloneOptions{
 		Auth: sshKey,
