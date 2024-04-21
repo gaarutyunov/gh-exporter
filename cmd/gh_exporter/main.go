@@ -4,8 +4,8 @@ import (
 	"context"
 	"github.com/gaarutyunov/gh-exporter/internal"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -105,7 +105,7 @@ func main() {
 	go func() {
 		if err := rootCmd.ExecuteContext(ctx); err != nil {
 			cancel()
-			log.Fatalln(err)
+			logrus.Fatalln(err)
 		}
 
 		sigstop <- syscall.Signal(0)

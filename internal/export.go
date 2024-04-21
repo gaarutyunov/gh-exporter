@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -107,10 +108,10 @@ func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs bill
 				wg.Go(func() error {
 					defer bar.Increment()
 					if err := repository.CloneMem(ctx, publicKey, pattern, outFs); err != nil {
-						return err
+						logrus.Errorf("error for %s: %s", repository.FullName(), err)
 					}
 
-					return err
+					return nil
 				})
 			}
 
@@ -158,7 +159,7 @@ func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs bill
 		wg.Go(func() error {
 			defer bar.Increment()
 			if err := repository.CloneFS(ctx, publicKey, pattern, outFs); err != nil {
-				return err
+				logrus.Errorf("error for %s: %s", repository.FullName(), err)
 			}
 
 			return err
