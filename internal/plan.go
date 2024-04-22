@@ -59,7 +59,7 @@ func Plan(cmd *cobra.Command, args []string) (err error) {
 		vals := strings.Split(scanner.Text(), ";")
 		fullName, sshUrl, size := vals[0], vals[1], vals[2]
 
-		repo := gh.NewRepo(sshUrl, fullName, "", cast.ToUint64(size))
+		repo := gh.NewRepo(sshUrl, fullName, cast.ToUint64(size))
 		if len(vals) > 3 {
 			repo.SetSHA(vals[3])
 		}

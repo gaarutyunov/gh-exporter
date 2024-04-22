@@ -47,6 +47,17 @@ var (
 		Short: "Scan repositories index from file",
 		RunE:  internal.Scan,
 	}
+
+	syncCmd = &cobra.Command{
+		Use:   "sync",
+		Short: "Sync repositories",
+	}
+
+	syncSFTPCmd = &cobra.Command{
+		Use:   "sftp",
+		Short: "Sync repositories of SFTP target",
+		RunE:  internal.SyncSFTP,
+	}
 )
 
 func init() {
@@ -76,6 +87,7 @@ func init() {
 	pFlags.StringP("keyfile", "K", "~/.ssh/id_hpc.pem", "SSH private key file path")
 	pFlags.StringP("passphrase", "P", "", "Passphrase for keyfile")
 	pFlags.StringP("user", "U", "gaarutyunov", "SSH user")
+	pFlags.StringP("remote", "R", "~/git-py/repos/python", "Remote output directory")
 
 	exportCmd.AddCommand(
 		exportSFTPCmd,
@@ -88,11 +100,32 @@ func init() {
 	pFlags.StringP("out", "o", "~/git-py/results.csv", "Output file in search format")
 	pFlags.StringP("format", "f", "%s %s", "Input file format")
 
+	// sync
+	pFlags = syncCmd.PersistentFlags()
+	pFlags.StringP("identity", "i", "~/.ssh/id_rsa", "SSH key path for cloning")
+	pFlags.StringP("local", "l", "~/git-py/repos/python", "Output directory")
+	pFlags.StringP("search", "s", "~/git-py/results.csv", "Search results file path to determine total")
+	pFlags.StringP("pattern", "p", "*.py", "Cloning file name pattern")
+	pFlags.IntP("concurrency", "c", 10, "Cloning concurrency")
+
+	// sync sftp
+	pFlags = syncSFTPCmd.PersistentFlags()
+	pFlags.StringP("addr", "A", "cluster.hpc.hse.ru:2222", "SFTP target host and port")
+	pFlags.StringP("keyfile", "K", "~/.ssh/id_hpc.pem", "SSH private key file path")
+	pFlags.StringP("passphrase", "P", "", "Passphrase for keyfile")
+	pFlags.StringP("user", "U", "gaarutyunov", "SSH user")
+	pFlags.StringP("remote", "R", "~/git-py/repos/python", "Remote output directory")
+
+	syncCmd.AddCommand(
+		syncSFTPCmd,
+	)
+
 	rootCmd.AddCommand(
 		searchCmd,
 		exportCmd,
 		planCmd,
 		scanCmd,
+		syncCmd,
 	)
 }
 

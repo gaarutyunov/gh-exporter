@@ -73,6 +73,6 @@ func (s *Fs) Readlink(link string) (string, error) {
 	panic("implement me")
 }
 
-func New(client *sftp.Client) billy.Filesystem {
-	return temporal.New(chroot.New(&Fs{Client: client}, ""), "")
+func New(client *sftp.Client, base string) billy.Filesystem {
+	return temporal.New(chroot.New(&Fs{Client: client}, base), "")
 }

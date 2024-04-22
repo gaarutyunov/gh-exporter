@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/sirupsen/logrus"
 	"io"
 	"os"
 	"path"
@@ -44,8 +45,12 @@ func (r *Repo) Size() uint64 {
 	return r.size
 }
 
-func NewRepo(sshURL string, fullName string, rootDir string, size uint64) *Repo {
-	cloneDir := path.Join(rootDir, strings.Replace(fullName, "/", Delimiter, 1))
+func (r *Repo) Dir() string {
+	return r.repoDir
+}
+
+func NewRepo(sshURL string, fullName string, size uint64) *Repo {
+	cloneDir := strings.Replace(fullName, "/", Delimiter, 1)
 
 	return &Repo{
 		sshURL:   sshURL,
@@ -156,7 +161,7 @@ func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern str
 				Mode:   git.HardReset,
 			})
 			if err != nil {
-				return err
+				logrus.Errorf("error resetting %s to %s: %s", r.FullName(), r.SHA(), err)
 			}
 		}
 	}

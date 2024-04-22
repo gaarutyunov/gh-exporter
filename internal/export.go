@@ -18,10 +18,19 @@ import (
 )
 
 func Export(cmd *cobra.Command, args []string) error {
-	return doExport(cmd.Context(), cmd, args, osfs.New(""))
+	outDir, err := cmd.PersistentFlags().GetString("out")
+	if err != nil {
+		return err
+	}
+
+	return doExport(cmd.Context(), cmd, args, osfs.New(outDir))
 }
 
 func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs billy.Filesystem) error {
+	if err := outFs.MkdirAll(outFs.Root(), os.ModeDir); err != nil && !os.IsExist(err) {
+		return err
+	}
+
 	concurrency, err := cmd.PersistentFlags().GetInt("concurrency")
 	if err != nil {
 		return err
@@ -34,15 +43,6 @@ func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs bill
 	sshPath = utils.ExpandPath(sshPath)
 	publicKey, err := ssh.NewPublicKeysFromFile("git", sshPath, "")
 	if err != nil {
-		return err
-	}
-
-	outDir, err := cmd.PersistentFlags().GetString("out")
-	if err != nil {
-		return err
-	}
-	outDir = utils.ExpandPath(outDir)
-	if err = outFs.MkdirAll(outDir, os.ModeDir); err != nil && !os.IsExist(err) {
 		return err
 	}
 
@@ -126,7 +126,7 @@ func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs bill
 			vals := strings.Split(scanner.Text(), ";")
 			fullName, sshUrl, size := vals[0], vals[1], vals[2]
 
-			repo := gh.NewRepo(sshUrl, fullName, outDir, cast.ToUint64(size))
+			repo := gh.NewRepo(sshUrl, fullName, cast.ToUint64(size))
 			if len(vals) > 3 {
 				sha := strings.TrimSpace(vals[3])
 				repo.SetSHA(sha)
