@@ -228,8 +228,8 @@ func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern str
 	return read("/")
 }
 
-func (r *Repo) Exists() (bool, error) {
-	if _, err := os.Stat(r.repoDir); err != nil {
+func (r *Repo) Exists(fs billy.Filesystem) (bool, error) {
+	if _, err := fs.Stat(r.repoDir); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}

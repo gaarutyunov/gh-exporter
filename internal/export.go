@@ -98,7 +98,7 @@ func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs bill
 			for _, rr := range group {
 				repository := rr
 
-				if ok, err := repository.Exists(); err != nil {
+				if ok, err := repository.Exists(outFs); err != nil {
 					return err
 				} else if ok {
 					bar.AddTotal(-1)
@@ -149,7 +149,7 @@ func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs bill
 	for _, rr := range remainder {
 		repository := rr
 
-		if ok, err := repository.Exists(); err != nil {
+		if ok, err := repository.Exists(outFs); err != nil {
 			return err
 		} else if ok {
 			bar.AddTotal(-1)
