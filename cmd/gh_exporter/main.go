@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
@@ -15,6 +16,21 @@ var (
 	rootCmd = &cobra.Command{
 		Use:   "gh_exporter",
 		Short: "Explore and export GitHub repositories",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			verbosity, err := cmd.Root().PersistentFlags().GetString("verbosity")
+			if err != nil {
+				return err
+			}
+
+			level, err := logrus.ParseLevel(verbosity)
+			if err != nil {
+				return err
+			}
+
+			logrus.SetLevel(level)
+
+			return nil
+		},
 	}
 
 	searchCmd = &cobra.Command{
@@ -61,8 +77,15 @@ var (
 )
 
 func init() {
+	pFlags := rootCmd.PersistentFlags()
+	levels := make([]string, 0, len(logrus.AllLevels))
+	for _, level := range logrus.AllLevels {
+		levels = append(levels, level.String())
+	}
+	pFlags.StringP("verbosity", "v", logrus.ErrorLevel.String(), "Verbosity level: "+strings.Join(levels, ", "))
+
 	// search
-	pFlags := searchCmd.PersistentFlags()
+	pFlags = searchCmd.PersistentFlags()
 	pFlags.StringP("query", "q", "q=language:python", "GitHub repos search query")
 	pFlags.StringP("out", "o", "~/git-py/results.csv", "Search results file")
 

@@ -22,6 +22,7 @@ func Export(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	outDir = utils.ExpandPath(outDir)
 
 	return doExport(cmd.Context(), cmd, args, osfs.New(outDir))
 }

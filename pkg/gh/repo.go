@@ -5,18 +5,21 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/helper/chroot"
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/google/go-github/v45/github"
 	"github.com/sirupsen/logrus"
 	"io"
+	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 type Repo struct {
@@ -25,9 +28,14 @@ type Repo struct {
 	repoDir  string
 	sha      string
 	size     uint64
+	ghRepo   *github.Repository
+	mx       sync.Mutex
 }
 
-var Delimiter = "."
+var (
+	Delimiter     = "."
+	DefaultBranch = "master"
+)
 
 func (r *Repo) SshURL() string {
 	return r.sshURL
@@ -64,89 +72,58 @@ func (r *Repo) SetSHA(sha string) {
 	r.sha = sha
 }
 
+func (r *Repo) GetGithubRepo(ctx context.Context) *github.Repository {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+
+	if r.ghRepo == nil {
+		return r.ghRepo
+	}
+
+	client := NewClient(ctx)
+	spl := strings.Split(r.fullName, "/")
+
+	repository, _, err := client.Repositories.Get(ctx, spl[0], spl[1])
+	if err != nil {
+		return nil
+	}
+	r.ghRepo = repository
+
+	return r.ghRepo
+}
+
+func (r *Repo) GetDefaultBranch(ctx context.Context) string {
+	repository := r.GetGithubRepo(ctx)
+	if repository == nil {
+		return DefaultBranch
+	}
+
+	branch := repository.GetDefaultBranch()
+	if branch == "" {
+		branch = repository.GetMasterBranch()
+	}
+	if branch == "" {
+		branch = DefaultBranch
+	}
+
+	return branch
+}
+
 func (r *Repo) CloneFS(ctx context.Context, sshKey *ssh.PublicKeys, pattern string, outFs billy.Filesystem) error {
 	outFs = chroot.New(outFs, r.repoDir)
 
-	rr, err := git.CloneContext(ctx, filesystem.NewStorage(outFs, cache.NewObjectLRU(128*cache.MiByte)), outFs, &git.CloneOptions{
-		Auth: sshKey,
-		URL:  r.sshURL,
-	})
+	branch := r.GetDefaultBranch(ctx)
+	logrus.Debugf("started cloning %s from %s into %s", r.FullName(), branch, outFs.Root())
+
+	dot, err := outFs.Chroot(git.GitDirName)
 	if err != nil {
 		return err
 	}
 
-	if r.sha != "" {
-		if w, err := rr.Worktree(); err != nil {
-			return err
-		} else {
-			err := w.Reset(&git.ResetOptions{
-				Commit: plumbing.NewHash(r.sha),
-				Mode:   git.HardReset,
-			})
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	var read func(dir string) (count int, err error)
-
-	read = func(dir string) (count int, err error) {
-		files, err := outFs.ReadDir(dir)
-		if err != nil {
-			return 0, err
-		}
-		count = len(files)
-
-		for _, file := range files {
-			fullName := file.Name()
-
-			if dir != "/" {
-				fullName = path.Join(dir, file.Name())
-			}
-
-			if file.IsDir() {
-				if n, err := read(fullName); err != nil {
-					return 0, err
-				} else if n == 0 {
-					if err := outFs.Remove(fullName); err != nil {
-						return 0, err
-					}
-					count -= 1
-				}
-				continue
-			}
-
-			match, err := filepath.Match(pattern, file.Name())
-			if err != nil {
-				return 0, err
-			}
-			if !match {
-				if err := outFs.Remove(fullName); err != nil {
-					return 0, err
-				}
-				count -= 1
-			}
-		}
-
-		return count, err
-	}
-
-	_, err = read("/")
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern string, outFs billy.Filesystem) error {
-	fs := memfs.New()
-	outFs = chroot.New(outFs, r.repoDir)
-
-	rr, err := git.CloneContext(ctx, memory.NewStorage(), fs, &git.CloneOptions{
-		Auth: sshKey,
-		URL:  r.sshURL,
+	rr, err := git.CloneContext(ctx, filesystem.NewStorage(dot, cache.NewObjectLRU(128*cache.MiByte)), outFs, &git.CloneOptions{
+		Auth:          sshKey,
+		URL:           r.sshURL,
+		ReferenceName: plumbing.NewBranchReferenceName(branch),
 	})
 	if err != nil {
 		return err
@@ -166,66 +143,98 @@ func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern str
 		}
 	}
 
-	var read func(dir string) error
-
-	read = func(dir string) error {
-		files, err := fs.ReadDir(dir)
-		if err != nil {
-			return err
+	err = util.Walk(outFs, "", func(path string, info fs.FileInfo, err error) error {
+		if info.IsDir() || info.Mode()&fs.ModeSymlink == 0 {
+			return nil
 		}
 
-		for _, file := range files {
-			fullName := file.Name()
-
-			if dir != "/" {
-				fullName = path.Join(dir, file.Name())
-			}
-
-			if file.Mode()&os.ModeSymlink != 0 {
-				continue
-			}
-
-			if file.IsDir() {
-				if err = read(fullName); err != nil {
-					return err
-				}
-				continue
-			}
-			match, err := filepath.Match(pattern, file.Name())
-			if err != nil {
-				return err
-			}
-			if !match {
-				continue
-			}
-
-			src, err := fs.Open(fullName)
-			if err != nil {
-				return err
-			}
-
-			dst, err := outFs.Create(fullName)
-			if err != nil {
-				return err
-			}
-
-			if _, err = io.Copy(dst, src); err != nil {
-				return err
-			}
-
-			if err := dst.Close(); err != nil {
-				return err
-			}
-
-			if err := src.Close(); err != nil {
+		if match, err := filepath.Match(pattern, info.Name()); err != nil {
+			return err
+		} else if !match {
+			if err := outFs.Remove(path); err != nil {
 				return err
 			}
 		}
 
 		return nil
+	})
+
+	if err != nil {
+		return err
 	}
 
-	return read("/")
+	logrus.Debugf("finished cloning %s from %s into %s", r.FullName(), branch, outFs.Root())
+
+	return nil
+}
+
+func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern string, outFs billy.Filesystem) error {
+	memFs := memfs.New()
+	outFs = chroot.New(outFs, r.repoDir)
+
+	branch := r.GetDefaultBranch(ctx)
+	logrus.Debugf("started cloning %s from %s through memory into %s", r.FullName(), branch, outFs.Root())
+
+	rr, err := git.CloneContext(ctx, memory.NewStorage(), memFs, &git.CloneOptions{
+		Auth:          sshKey,
+		URL:           r.sshURL,
+		ReferenceName: plumbing.NewBranchReferenceName(branch),
+	})
+	if err != nil {
+		return err
+	}
+
+	if r.sha != "" {
+		if w, err := rr.Worktree(); err != nil {
+			return err
+		} else {
+			err := w.Reset(&git.ResetOptions{
+				Commit: plumbing.NewHash(r.sha),
+				Mode:   git.HardReset,
+			})
+			if err != nil {
+				logrus.Errorf("error resetting %s to %s: %s", r.FullName(), r.SHA(), err)
+			}
+		}
+	}
+
+	err = util.Walk(memFs, "", func(path string, info fs.FileInfo, err error) error {
+		if info.IsDir() || info.Mode()&fs.ModeSymlink == 0 {
+			return nil
+		}
+
+		if match, err := filepath.Match(pattern, info.Name()); err != nil {
+			return err
+		} else if !match {
+			return nil
+		}
+
+		src, err := memFs.Open(path)
+		if err != nil {
+			return err
+		}
+
+		dst, err := outFs.Create(path)
+		if err != nil {
+			return err
+		}
+
+		defer func() {
+			_ = src.Close()
+			_ = dst.Close()
+		}()
+
+		_, err = io.Copy(dst, src)
+
+		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	logrus.Debugf("finished cloning %s from %s through memory into %s", r.FullName(), branch, outFs.Root())
+
+	return nil
 }
 
 func (r *Repo) Exists(fs billy.Filesystem) (bool, error) {
