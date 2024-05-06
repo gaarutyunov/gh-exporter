@@ -103,6 +103,8 @@ func init() {
 	pFlags.StringP("search", "s", "~/git-py/results.csv", "Search results file path to determine total")
 	pFlags.StringP("pattern", "p", "*.py", "Cloning file name pattern")
 	pFlags.IntP("concurrency", "c", 10, "Cloning concurrency")
+	pFlags.Bool("skip-remainder", false, "Skip exporting remainder")
+	pFlags.Bool("only-remainder", false, "Export only remainder")
 
 	// export sftp
 	pFlags = exportSFTPCmd.PersistentFlags()

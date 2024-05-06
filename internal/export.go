@@ -28,10 +28,6 @@ func Export(cmd *cobra.Command, args []string) error {
 }
 
 func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs billy.Filesystem) error {
-	if err := outFs.MkdirAll(outFs.Root(), os.ModeDir); err != nil && !os.IsExist(err) {
-		return err
-	}
-
 	concurrency, err := cmd.PersistentFlags().GetInt("concurrency")
 	if err != nil {
 		return err
@@ -64,6 +60,16 @@ func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs bill
 		return err
 	}
 
+	skipRemainder, err := cmd.PersistentFlags().GetBool("skip-remainder")
+	if err != nil {
+		return err
+	}
+
+	onlyRemainder, err := cmd.PersistentFlags().GetBool("only-remainder")
+	if err != nil {
+		return err
+	}
+
 	fsearch, err := os.Open(searchFile)
 	if err != nil {
 		return err
@@ -84,6 +90,7 @@ func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs bill
 	}
 	defer func(fin *os.File) {
 		err = fin.Close()
+		bar.Finish()
 	}(fin)
 
 	scanner := bufio.NewScanner(fin)
@@ -95,6 +102,10 @@ func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs bill
 		if scanner.Text() == "" {
 			var wg errgroup.Group
 			wg.SetLimit(concurrency)
+
+			if onlyRemainder {
+				continue
+			}
 
 			for _, rr := range group {
 				repository := rr
@@ -144,6 +155,10 @@ func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs bill
 		return err
 	}
 
+	if skipRemainder {
+		return nil
+	}
+
 	var wg errgroup.Group
 	wg.SetLimit(concurrency)
 
@@ -170,8 +185,6 @@ func doExport(ctx context.Context, cmd *cobra.Command, args []string, outFs bill
 	if err = wg.Wait(); err != nil {
 		return err
 	}
-
-	bar.Finish()
 
 	return nil
 }

@@ -143,8 +143,8 @@ func (r *Repo) CloneFS(ctx context.Context, sshKey *ssh.PublicKeys, pattern stri
 		}
 	}
 
-	err = util.Walk(outFs, "", func(path string, info fs.FileInfo, err error) error {
-		if info.IsDir() || info.Mode()&fs.ModeSymlink == 0 {
+	err = util.Walk(outFs, outFs.Root(), func(path string, info fs.FileInfo, err error) error {
+		if info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
 			return nil
 		}
 
@@ -198,8 +198,8 @@ func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern str
 		}
 	}
 
-	err = util.Walk(memFs, "", func(path string, info fs.FileInfo, err error) error {
-		if info.IsDir() || info.Mode()&fs.ModeSymlink == 0 {
+	err = util.Walk(memFs, memFs.Root(), func(path string, info fs.FileInfo, err error) error {
+		if info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
 			return nil
 		}
 
