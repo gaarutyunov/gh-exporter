@@ -76,7 +76,7 @@ func (r *Repo) GetGithubRepo(ctx context.Context) *github.Repository {
 	r.mx.Lock()
 	defer r.mx.Unlock()
 
-	if r.ghRepo == nil {
+	if r.ghRepo != nil {
 		return r.ghRepo
 	}
 
