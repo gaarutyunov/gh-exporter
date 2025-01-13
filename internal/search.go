@@ -3,23 +3,46 @@ package internal
 import (
 	"fmt"
 	"github.com/cheggaaa/pb/v3"
-	"github.com/gaarutyunov/gh-exporter/pkg/gh"
-	"github.com/gaarutyunov/gh-exporter/pkg/utils"
+	"github.com/gaarutyunov/gh-exporter/gh"
+	"github.com/gaarutyunov/gh-exporter/utils"
 	"github.com/google/go-github/v45/github"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"os"
-	"time"
+	"sync/atomic"
 )
 
-const layout = "2006-01-02"
+const reposPerPage = 100
 
 func Search(cmd *cobra.Command, args []string) error {
-	client := gh.NewClient(cmd.Context())
-
 	query, err := cmd.PersistentFlags().GetString("query")
 	if err != nil {
 		return err
 	}
+
+	limit, err := cmd.PersistentFlags().GetInt64("limit")
+	if err != nil {
+		return err
+	}
+
+	burst, err := cmd.PersistentFlags().GetInt("burst")
+	if err != nil {
+		return err
+	}
+
+	client := gh.NewClient(cmd.Context())
+
+	searchLimiter := gh.NewLimiter(
+		client,
+		gh.WithLimit(gh.SearchLimit),
+		gh.WithBurst(burst),
+	)
+
+	coreLimiter := gh.NewLimiter(
+		client,
+		gh.WithLimit(gh.CoreLimit),
+		gh.WithBurst(burst),
+	)
 
 	res, _, err := client.Search.Repositories(cmd.Context(), query, &github.SearchOptions{
 		TextMatch: false,
@@ -43,65 +66,123 @@ func Search(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	defer func(fi *os.File) {
-		_ = fi.Close()
-	}(fi)
+	defer fi.Close()
 
-	perPage := 100
-	total := res.GetTotal()
+	var counter, doneCounter atomic.Int64
 
-	bar := pb.StartNew(res.GetTotal())
+	if limit > 0 {
+		limit = min(limit, int64(res.GetTotal()))
 
-	now := time.Now()
-	from := now.Add(-(time.Hour * 24 * 30))
-	lastRange := fmt.Sprintf("%s..%s", from.Format(layout), now.Format(layout))
+		counter.Store(limit)
+		doneCounter.Store(limit)
+	} else {
+		counter.Store(int64(res.GetTotal()))
+		doneCounter.Store(int64(res.GetTotal()))
+	}
 
-	for !bar.IsFinished() {
-		if err := client.Wait(cmd.Context()); err != nil {
-			return err
-		}
+	bar := pb.StartNew(int(limit))
 
-		page := 0
-		pageSize := perPage
+	defer bar.Finish()
 
-		for pageSize >= perPage {
-			res, _, err := client.Search.Repositories(cmd.Context(), query+" pushed:"+lastRange, &github.SearchOptions{
-				Sort:      "updated",
-				Order:     "desc",
-				TextMatch: false,
+	perPage := min(int(limit), reposPerPage)
+
+	page := 0
+
+	repoCh := make(chan *gh.Repo)
+
+	defer close(repoCh)
+
+	go func() {
+		for repo := range repoCh {
+			select {
+			case <-cmd.Context().Done():
+				return
+			default:
+			}
+
+			err := coreLimiter.Wait(cmd.Context())
+			if err != nil {
+				continue
+			}
+
+			defaultBranch := repo.GetDefaultBranch()
+
+			commits, _, err := client.Repositories.ListCommits(cmd.Context(), repo.Owner(), repo.Name(), &github.CommitsListOptions{
+				SHA: defaultBranch,
 				ListOptions: github.ListOptions{
-					Page:    page,
-					PerPage: perPage,
+					Page:    0,
+					PerPage: 1,
 				},
 			})
 			if err != nil {
-				return err
+				logrus.Errorf("List commits for %s err: %v", repo.FullName(), err)
+				bar.AddTotal(-1)
+				doneCounter.Add(-1)
+				continue
 			}
 
-			pageSize = len(res.Repositories)
-
-			for _, repository := range res.Repositories {
-				if _, err = fmt.Fprintf(
-					fi,
-					"%s;%s;%d\n",
-					repository.GetFullName(),
-					repository.GetSSHURL(),
-					repository.GetSize(),
-				); err != nil {
-					return err
-				}
-
-				bar.Increment()
+			if len(commits) > 0 {
+				repo.SetSHA(commits[0].GetSHA())
 			}
-			page++
+
+			if _, err = fmt.Fprintln(fi, repo); err != nil {
+				bar.AddTotal(-1)
+				doneCounter.Add(-1)
+				continue
+			}
+
+			bar.Increment()
+			doneCounter.Add(-1)
+		}
+	}()
+
+	for counter.Load() > 0 {
+		select {
+		case <-cmd.Context().Done():
+			return cmd.Context().Err()
+		default:
 		}
 
-		lastFrom := from.Add(-(time.Hour * 24 * 1))
-		from = lastFrom.Add(-(time.Hour * 24 * 30))
-		lastRange = fmt.Sprintf("%s..%s", from.Format(layout), lastFrom.Format(layout))
+		if err := searchLimiter.Wait(cmd.Context()); err != nil {
+			return err
+		}
 
-		if bar.Current() >= int64(total) {
-			bar.Finish()
+		res, _, err := client.Search.Repositories(cmd.Context(), query, &github.SearchOptions{
+			TextMatch: false,
+			ListOptions: github.ListOptions{
+				Page:    page,
+				PerPage: perPage,
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		l := min(len(res.Repositories), int(counter.Load()))
+
+		for i := 0; i < l; i++ {
+			repository := res.Repositories[i]
+
+			repoCh <- gh.NewRepo(
+				gh.NewRepoInfo(
+					repository.GetFullName(),
+					repository.GetSSHURL(),
+					uint64(repository.GetSize()),
+				),
+				repository,
+			)
+
+			counter.Add(-1)
+		}
+
+		page++
+	}
+
+	for !doneCounter.CompareAndSwap(0, 0) {
+		select {
+		case <-cmd.Context().Done():
+			return cmd.Context().Err()
+		default:
 		}
 	}
 

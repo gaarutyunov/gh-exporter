@@ -2,19 +2,12 @@ package internal
 
 import (
 	"bufio"
-	"errors"
-	"fmt"
-	"github.com/gaarutyunov/gh-exporter/pkg/binpack"
-	"github.com/gaarutyunov/gh-exporter/pkg/gh"
-	"github.com/gaarutyunov/gh-exporter/pkg/utils"
-	"github.com/spf13/cast"
+	"github.com/gaarutyunov/gh-exporter/binpack"
+	"github.com/gaarutyunov/gh-exporter/gh"
+	"github.com/gaarutyunov/gh-exporter/plan"
+	"github.com/gaarutyunov/gh-exporter/utils"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/spf13/cobra"
-	"os"
-	"strings"
-)
-
-var (
-	ErrInvalidCast = errors.New("invalid cast")
 )
 
 func Plan(cmd *cobra.Command, args []string) (err error) {
@@ -35,33 +28,28 @@ func Plan(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 
+	capacity /= uint64(cache.KiByte)
+
 	fin, err := utils.TryCreate(in)
 	if err != nil {
 		return err
 	}
-	defer func(fin *os.File) {
-		err = fin.Close()
-	}(fin)
+	defer fin.Close()
 
 	fout, err := utils.TryCreate(out)
 	if err != nil {
 		return err
 	}
-	defer func(fout *os.File) {
-		err = fout.Close()
-	}(fout)
+	defer fout.Close()
 
 	scanner := bufio.NewScanner(fin)
 
-	var items []binpack.Packable
+	var items []gh.RepoInfo
 
 	for scanner.Scan() {
-		vals := strings.Split(scanner.Text(), ";")
-		fullName, sshUrl, size := vals[0], vals[1], vals[2]
-
-		repo := gh.NewRepo(sshUrl, fullName, cast.ToUint64(size))
-		if len(vals) > 3 {
-			repo.SetSHA(vals[3])
+		repo, err := gh.RepoInfoFromString(scanner.Text())
+		if err != nil {
+			return err
 		}
 		items = append(items, repo)
 	}
@@ -70,55 +58,12 @@ func Plan(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 
-	bins, remainder := binpack.FirstFit(items, capacity)
+	planFile := plan.New(binpack.FirstFit(items, capacity))
 
-	for _, bin := range bins {
-		for _, rr := range bin {
-			repo, ok := rr.(*gh.Repo)
-			if !ok {
-				return ErrInvalidCast
-			}
-
-			if _, err = fmt.Fprintf(
-				fout,
-				"%s;%s;%d;%s\n",
-				repo.FullName(),
-				repo.SshURL(),
-				repo.Size(),
-				repo.SHA(),
-			); err != nil {
-				return err
-			}
-		}
-
-		if _, err = fmt.Fprintln(fout); err != nil {
-			return err
-		}
+	_, err = fout.WriteString(planFile.String())
+	if err != nil {
+		return err
 	}
 
-	if len(remainder) != 0 {
-		if _, err = fmt.Fprintln(fout, "---"); err != nil {
-			return err
-		}
-
-		for _, rr := range remainder {
-			repo, ok := rr.(*gh.Repo)
-			if !ok {
-				return ErrInvalidCast
-			}
-
-			if _, err = fmt.Fprintf(
-				fout,
-				"%s;%s;%d;%s\n",
-				repo.FullName(),
-				repo.SshURL(),
-				repo.Size(),
-				repo.SHA(),
-			); err != nil {
-				return err
-			}
-		}
-	}
-
-	return
+	return nil
 }

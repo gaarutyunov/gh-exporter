@@ -18,82 +18,32 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
-	"sync"
 )
 
 type Repo struct {
-	sshURL   string
-	fullName string
-	repoDir  string
-	sha      string
-	size     uint64
-	ghRepo   *github.Repository
-	mx       sync.Mutex
+	RepoInfo
+	ghRepo *github.Repository
 }
 
 var (
 	Delimiter     = "."
 	DefaultBranch = "master"
+	Depth         = 1
 )
 
-func (r *Repo) SshURL() string {
-	return r.sshURL
-}
-
-func (r *Repo) FullName() string {
-	return r.fullName
-}
-
-func (r *Repo) SHA() string {
-	return r.sha
-}
-
-func (r *Repo) Size() uint64 {
-	return r.size
-}
-
-func (r *Repo) Dir() string {
-	return r.repoDir
-}
-
-func NewRepo(sshURL string, fullName string, size uint64) *Repo {
-	cloneDir := strings.Replace(fullName, "/", Delimiter, 1)
-
+func NewRepo(info RepoInfo, ghRepo *github.Repository) *Repo {
 	return &Repo{
-		sshURL:   sshURL,
-		fullName: fullName,
-		repoDir:  cloneDir,
-		size:     size * uint64(cache.KiByte),
+		RepoInfo: info,
+		ghRepo:   ghRepo,
 	}
 }
 
 func (r *Repo) SetSHA(sha string) {
-	r.sha = sha
+	r.RepoInfo = r.RepoInfo.WithSHA(sha)
 }
 
-func (r *Repo) GetGithubRepo(ctx context.Context) *github.Repository {
-	r.mx.Lock()
-	defer r.mx.Unlock()
-
-	if r.ghRepo != nil {
-		return r.ghRepo
-	}
-
-	client := NewClient(ctx)
-	spl := strings.Split(r.fullName, "/")
-
-	repository, _, err := client.Repositories.Get(ctx, spl[0], spl[1])
-	if err != nil {
-		return nil
-	}
-	r.ghRepo = repository
-
-	return r.ghRepo
-}
-
-func (r *Repo) GetDefaultBranch(ctx context.Context) string {
-	repository := r.GetGithubRepo(ctx)
+func (r *Repo) GetDefaultBranch() string {
+	repository := r.ghRepo
 	if repository == nil {
 		return DefaultBranch
 	}
@@ -112,18 +62,14 @@ func (r *Repo) GetDefaultBranch(ctx context.Context) string {
 func (r *Repo) CloneFS(ctx context.Context, sshKey *ssh.PublicKeys, pattern string, outFs billy.Filesystem) error {
 	outFs = chroot.New(outFs, r.repoDir)
 
-	branch := r.GetDefaultBranch(ctx)
-	logrus.Debugf("started cloning %s from %s into %s", r.FullName(), branch, outFs.Root())
-
 	dot, err := outFs.Chroot(git.GitDirName)
 	if err != nil {
 		return err
 	}
 
 	rr, err := git.CloneContext(ctx, filesystem.NewStorage(dot, cache.NewObjectLRU(128*cache.MiByte)), outFs, &git.CloneOptions{
-		Auth:          sshKey,
-		URL:           r.sshURL,
-		ReferenceName: plumbing.NewBranchReferenceName(branch),
+		Auth: sshKey,
+		URL:  r.sshURL,
 	})
 	if err != nil {
 		return err
@@ -143,7 +89,17 @@ func (r *Repo) CloneFS(ctx context.Context, sshKey *ssh.PublicKeys, pattern stri
 		}
 	}
 
-	err = util.Walk(outFs, outFs.Root(), func(path string, info fs.FileInfo, err error) error {
+	err = util.Walk(outFs, "/", func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
 			return nil
 		}
@@ -163,22 +119,17 @@ func (r *Repo) CloneFS(ctx context.Context, sshKey *ssh.PublicKeys, pattern stri
 		return err
 	}
 
-	logrus.Debugf("finished cloning %s from %s into %s", r.FullName(), branch, outFs.Root())
-
 	return nil
 }
 
 func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern string, outFs billy.Filesystem) error {
 	memFs := memfs.New()
 	outFs = chroot.New(outFs, r.repoDir)
+	storage := memory.NewStorage()
 
-	branch := r.GetDefaultBranch(ctx)
-	logrus.Debugf("started cloning %s from %s through memory into %s", r.FullName(), branch, outFs.Root())
-
-	rr, err := git.CloneContext(ctx, memory.NewStorage(), memFs, &git.CloneOptions{
-		Auth:          sshKey,
-		URL:           r.sshURL,
-		ReferenceName: plumbing.NewBranchReferenceName(branch),
+	rr, err := git.CloneContext(ctx, storage, memFs, &git.CloneOptions{
+		Auth: sshKey,
+		URL:  r.sshURL,
 	})
 	if err != nil {
 		return err
@@ -199,6 +150,16 @@ func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern str
 	}
 
 	err = util.Walk(memFs, memFs.Root(), func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
 			return nil
 		}
@@ -231,8 +192,6 @@ func (r *Repo) CloneMem(ctx context.Context, sshKey *ssh.PublicKeys, pattern str
 	if err != nil {
 		return err
 	}
-
-	logrus.Debugf("finished cloning %s from %s through memory into %s", r.FullName(), branch, outFs.Root())
 
 	return nil
 }

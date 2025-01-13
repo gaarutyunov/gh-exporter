@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"io"
+	"iter"
 )
 
 const lineBreak = '\n'
@@ -36,15 +37,15 @@ func LineCounter(r io.Reader) (int, error) {
 	return count, nil
 }
 
-func IterLines(r io.Reader, iter func(line string) error) error {
+func IterLines(r io.Reader) iter.Seq[string] {
 	scanner := bufio.NewScanner(r)
 
-	for scanner.Scan() {
-		err := iter(scanner.Text())
-		if err != nil {
-			return err
+	return func(yield func(string) bool) {
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !yield(line) {
+				return
+			}
 		}
 	}
-
-	return scanner.Err()
 }

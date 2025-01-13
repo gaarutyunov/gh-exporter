@@ -11,11 +11,9 @@ var homeDir string
 
 func init() {
 	usr, err := user.Current()
-	if err != nil {
-		homeDir = ""
+	if err == nil {
+		homeDir = usr.HomeDir
 	}
-
-	homeDir = usr.HomeDir
 }
 
 func ExpandPath(p string) string {
