@@ -10,7 +10,7 @@ import (
 
 var (
 	rootCmd = &cobra.Command{
-		Use:   "gh_exporter",
+		Use:   "gh-exporter",
 		Short: "Explore and export GitHub repositories",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			verbosity, err := cmd.Root().PersistentFlags().GetString("verbosity")
