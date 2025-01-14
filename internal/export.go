@@ -55,6 +55,11 @@ func Export(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	inMemory, err := cmd.PersistentFlags().GetBool("in-memory")
+	if err != nil {
+		return err
+	}
+
 	fin, err := plan.Open(planFile)
 	if err != nil {
 		return err
@@ -70,7 +75,7 @@ func Export(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 
-	for group := range fin.Iter(skipRemainder, onlyRemainder) {
+	for group, isRemainder := range fin.Iter(skipRemainder, onlyRemainder) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -81,6 +86,7 @@ func Export(cmd *cobra.Command, args []string) error {
 		wg.SetLimit(concurrency)
 
 		group := group
+		isRemainder := isRemainder
 
 		for _, repoInfo := range group {
 			select {
@@ -105,8 +111,14 @@ func Export(cmd *cobra.Command, args []string) error {
 				default:
 				}
 
+				cloneFn := repository.CloneFS
+
+				if inMemory && !isRemainder {
+					cloneFn = repository.CloneMem
+				}
+
 				defer bar.Increment()
-				if err := repository.CloneFS(ctx, publicKey, pattern, outFs); err != nil {
+				if err := cloneFn(ctx, publicKey, pattern, outFs); err != nil {
 					logrus.Errorf("error for %s: %s", repository.FullName(), err)
 				}
 

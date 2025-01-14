@@ -66,31 +66,32 @@ func init() {
 	// search
 	pFlags = searchCmd.PersistentFlags()
 	pFlags.StringP("query", "q", "language:Python", "GitHub repos search query")
-	pFlags.StringP("out", "o", "~/git-py/results.csv", "Search results file")
+	pFlags.StringP("out", "o", "results.csv", "Search results file")
 	pFlags.Int64P("limit", "l", -1, "Maximum number of repositories to export")
 	pFlags.IntP("burst", "b", 1, "Rate limiter burst")
 
 	// plan
 	pFlags = planCmd.PersistentFlags()
 	pFlags.Uint64P("capacity", "c", uint64(cache.GiByte), "Repository group capacity in bytes")
-	pFlags.StringP("in", "i", "~/git-py/results.csv", "Search results input for planning")
-	pFlags.StringP("out", "o", "~/git-py/plan.csv", "Plan file path")
+	pFlags.StringP("in", "i", "results.csv", "Search results input for planning")
+	pFlags.StringP("out", "o", "plan.csv", "Plan file path")
 
 	// export
 	pFlags = exportCmd.PersistentFlags()
 	pFlags.StringP("identity", "i", "~/.ssh/id_rsa", "SSH key path for cloning")
-	pFlags.StringP("out", "o", "~/git-py/repos/python", "Output directory")
-	pFlags.StringP("file", "f", "~/git-py/plan.csv", "Plan file path")
+	pFlags.StringP("out", "o", "repos", "Output directory")
+	pFlags.StringP("file", "f", "plan.csv", "Plan file path")
 	pFlags.StringP("pattern", "p", "*.py", "Cloning file name pattern")
 	pFlags.IntP("concurrency", "c", 10, "Cloning concurrency")
 	pFlags.Bool("skip-remainder", false, "Skip exporting remainder")
 	pFlags.Bool("only-remainder", false, "Export only remainder")
+	pFlags.Bool("in-memory", false, "Use in-memory cloning")
 
 	// scan
 	pFlags = scanCmd.PersistentFlags()
 	pFlags.IntP("concurrency", "c", 10, "Scanning concurrency")
 	pFlags.StringP("in", "i", "input.spec", "Input file to scan")
-	pFlags.StringP("out", "o", "~/git-py/results.csv", "Output file in search format")
+	pFlags.StringP("out", "o", "results.csv", "Output file in search format")
 	pFlags.StringP("format", "f", "%s %s", "Input file format")
 
 	rootCmd.AddCommand(
