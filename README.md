@@ -12,6 +12,11 @@ go install github.com/gaarutyunov/gh-exporter@latest
 
 ## Usage
 
+### Prerequisites
+
+1. You will need to configure [GitHub token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) in a `GITHUB_TOKEN` environment variable for authorization
+2. And an [ssh key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account) attached to your account in GitHub for cloning without a limit
+
 ### Search
 
 First, you need to search for repositories you want to export. You can use the following command to search for repositories:
