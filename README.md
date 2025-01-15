@@ -60,7 +60,7 @@ gh-exporter plan --help
 Finally, you can export the repositories using the following command:
 
 ```bash
-gh-exporter export --in plan.csv --out repos --pattern "*.py"
+gh-exporter export --in plan.csv --out raw_repos --pattern "*.py"
 ```
 
 It will clone the repositories to the `repos` directory using the `plan.csv` file by chunks.
@@ -71,7 +71,7 @@ You can use the `--concurrency` option to specify the number of concurrent downl
 Also, you can try in memory cloning to speed up and save disk space by using the `--in-memory` option.:
 
 ```bash
-gh-exporter export --in plan.csv --out repos --in-memory
+gh-exporter export --in plan.csv --out raw_repos --in-memory
 ```
 
 But be aware that it might consume a lot of memory for repositories with a lot of commit history.
@@ -79,7 +79,7 @@ But be aware that it might consume a lot of memory for repositories with a lot o
 Also, don't forget to specify the path to your SSH key with the `--identity` option.
 
 ```bash
-gh-exporter export --in plan.csv --out repos --identity ~/.ssh/gh_rsa --pattern "*.py"
+gh-exporter export --in plan.csv --out raw_repos --identity ~/.ssh/gh_rsa --pattern "*.py"
 ```
 
 To see all available options, run:
