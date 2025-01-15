@@ -15,7 +15,7 @@ go install github.com/gaarutyunov/gh-exporter@latest
 ### Prerequisites
 
 1. You will need to configure [GitHub token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) in a `GITHUB_TOKEN` environment variable for authorization
-2. And an [ssh key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account) attached to your account in GitHub for cloning without a limit
+2. And an [ssh key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account) attached to your account in GitHub for cloning without a limit. The path to the key should be specified with the `--identity` option for `export` command (see in instruction below).
 
 ### Search
 
@@ -75,6 +75,12 @@ gh-exporter export --in plan.csv --out repos --in-memory
 ```
 
 But be aware that it might consume a lot of memory for repositories with a lot of commit history.
+
+Also, don't forget to specify the path to your SSH key with the `--identity` option.
+
+```bash
+gh-exporter export --in plan.csv --out repos --identity ~/.ssh/gh_rsa --pattern "*.py"
+```
 
 To see all available options, run:
 
